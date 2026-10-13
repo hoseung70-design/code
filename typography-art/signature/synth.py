@@ -1,4 +1,4 @@
-"""Soundtrack for "The Signature" — heavy laser version (original piece).
+"""Soundtrack for "The Signature" — low, heavy laser version (original piece).
 
 "지잉~잉": buzzing, pitch-gliding laser tones built from FM + saw/square cores,
 driven hard and filtered, all synced to the picture (timeline as index.html).
@@ -11,7 +11,7 @@ driven hard and filtered, all synced to the picture (timeline as index.html).
     2.20/2.60  shield: two heavy laser blasts (falling chirps)
     2.90 + i·0.28  each Korean syllable: a short laser "zing"
     4.15 + j·0.06  English letters: tiny zaps
-    4.60–5.60  the hum charges up ("지이이잉")
+    4.60–5.60  the hum charges up an octave, D1 → D2 ("지이이잉")
     5.60       big blast "ZWAAANG" + sub, then the beam rings out and dies
 """
 import math
@@ -90,25 +90,25 @@ def chirp(d, f0, f1, curve=3.0):
 # ---------------------------------------------------------------- pen: charging laser "지이잉"
 d = PEN1 - PEN0 + .05
 x = tt(d); u = np.clip(x / (PEN1 - PEN0), 0, 1)
-f = 38 * 2 ** (2.6 * u ** 1.6) * (1 + .012 * np.sin(2 * np.pi * (5 + 9 * u) * x))      # climbing, wobbling
-charge = laser(f, lambda tc: 300 + 5000 * min(1, tc / (PEN1 - PEN0)) ** 2, drive=2.5, fm=4.5)
+f = 24 * 2 ** (2.1 * u ** 1.6) * (1 + .012 * np.sin(2 * np.pi * (5 + 9 * u) * x))      # climbing, wobbling
+charge = laser(f, lambda tc: 220 + 2600 * min(1, tc / (PEN1 - PEN0)) ** 2, drive=2.8, fm=4.5)
 charge *= u ** 1.3 * np.where(x > PEN1 - PEN0, np.exp(-(x - (PEN1 - PEN0)) / .02), 1)
 orbit = np.sin(-math.pi / 2 + 2 * math.pi * (.5 - .5 * np.cos(math.pi * u))) * .8
 place(charge, PEN0, .35, orbit, .3)
 
 # ---------------------------------------------------------------- disc fills: ZWOOM + the beam hum "잉~"
 d = 1.4
-zwoom = laser(chirp(d, 420, 42, 4.0), lambda tc: 4000 * math.exp(-tc / .35) + 250, drive=3.5, fm=4.0)
+zwoom = laser(chirp(d, 240, 26, 4.0), lambda tc: 2600 * math.exp(-tc / .35) + 180, drive=3.5, fm=4.0)
 place(zwoom * np.exp(-tt(d) / .55), PEN1, .55, 0, .35)
-place(sub_hit(3.0, 120, 30, 1.1), PEN1, .9, 0, .05)
+place(sub_hit(3.0, 90, 24, 1.3), PEN1, 1.0, 0, .05)
 
 # the beam: a heavy buzzing hum from the disc to the end, charging before the finale
 hx = t - PEN1
 charge_k = np.clip((t - 4.6) / (FINAL - 4.6), 0, 1)
-hum_f = 55 * (1 + .006 * np.sin(2 * np.pi * 5.3 * t) + .003 * np.sin(2 * np.pi * .7 * t)) * 2 ** (charge_k ** 2)
+hum_f = 36.71 * (1 + .006 * np.sin(2 * np.pi * 5.3 * t) + .003 * np.sin(2 * np.pi * .7 * t)) * 2 ** (charge_k ** 2)
 after = np.clip((t - FINAL) / 1.6, 0, 1)
-hum_f = np.where(t > FINAL, 110 * 2 ** (-.25 * after) * (1 + .01 * np.sin(2 * np.pi * 6 * t)), hum_f)   # sags & wobbles
-hum = laser(hum_f, lambda tc: 750 + 4200 * min(1, max(0, (tc - 4.6) / (FINAL - 4.6))) ** 2
+hum_f = np.where(t > FINAL, 73.42 * 2 ** (-.25 * after) * (1 + .01 * np.sin(2 * np.pi * 6 * t)), hum_f)   # sags & wobbles
+hum = laser(hum_f, lambda tc: 480 + 2600 * min(1, max(0, (tc - 4.6) / (FINAL - 4.6))) ** 2
             + 350 * (1 + math.sin(2 * math.pi * .45 * tc)), drive=3.0, fm=2.0, q=2.0)
 hum_env = np.clip(hx / .35, 0, 1) * (hx > 0)
 hum_env *= .4 + 1.1 * charge_k ** 1.5 + .2 * (.5 + .5 * np.sin(2 * np.pi * .4 * t))            # slow swells
@@ -120,43 +120,43 @@ SL += .08 * hum * hum_env; SR_ += .08 * hum * hum_env
 # ---------------------------------------------------------------- ring lettering: whirling high sweep
 d = RING1 - RING0 + .4
 x = tt(d)
-wf = 900 + 700 * np.sin(2 * np.pi * 2.2 * x) + 900 * x / d
-whirl = laser(wf, 6000, drive=1.8, fm=3.0, q=.5)
+wf = 420 + 300 * np.sin(2 * np.pi * 2.2 * x) + 380 * x / d
+whirl = laser(wf, 3500, drive=2.2, fm=3.0, q=.5)
 whirl *= np.clip(x / .15, 0, 1) * np.exp(-np.clip(x - (RING1 - RING0), 0, None) / .15)
 place(whirl, RING0, .08, np.sin(2 * np.pi * 1.25 * x) * .9, .5)
 
 # ---------------------------------------------------------------- shield: two laser blasts
 for k, at in enumerate((SH0, SH0 + .4)):
     d = .7
-    blast = laser(chirp(d, 900 - 150 * k, 70, 5.0), lambda tc: 5000 * math.exp(-tc / .15) + 300, drive=3.2, fm=5.0)
+    blast = laser(chirp(d, 480 - 80 * k, 38, 5.0), lambda tc: 3000 * math.exp(-tc / .15) + 220, drive=3.2, fm=5.0)
     place(blast * np.exp(-tt(d) / .22), at, .45, (-.3, .3)[k], .35)
-    place(sub_hit(1.2, 100, 40, .3), at, .45, 0, .05)
+    place(sub_hit(1.4, 80, 30, .4), at, .55, 0, .05)
 
 # ---------------------------------------------------------------- Korean syllables: laser "zing" each
 steps = [0, 3, 5, 7, 5, 10, 8, 12]                                  # a little rising figure
 for i, st in enumerate(steps):
     d = .45
     x = tt(d)
-    zf = 220 * 2 ** (st / 12) * (1 + 1.2 * np.exp(-x / .05))          # snaps down into the note
-    zing = laser(zf, lambda tc: 3500 * math.exp(-tc / .2) + 500, drive=2.2, fm=2.5, q=1.0)
+    zf = 110 * 2 ** (st / 12) * (1 + 1.2 * np.exp(-x / .05))          # snaps down into the note
+    zing = laser(zf, lambda tc: 2400 * math.exp(-tc / .2) + 350, drive=2.6, fm=2.5, q=1.0)
     place(zing * np.exp(-x / .14), KR0 + i * KR_STEP, .22, -.45 + i * .13, .35)
 
 # ---------------------------------------------------------------- English letters: tiny zaps
 for j in range(20):
     d = .09
-    zap = np.sin(2 * np.pi * np.cumsum(chirp(d, 4200, 900, 4)) / SR) * np.exp(-tt(d) / .025)
+    zap = np.sin(2 * np.pi * np.cumsum(chirp(d, 1700, 380, 4)) / SR) * np.exp(-tt(d) / .025)
     place(zap, EN0 + j * EN_STEP, .06, -.7 + j * .07, .3)
 
 # ---------------------------------------------------------------- finale: "ZWAAANG"
 d = DUR - FINAL
 x = tt(d)
-bf = 41.2 * (1 + 2.5 * np.exp(-x / .07)) * 2 ** (-.8 * np.clip(x / 2, 0, 1) / 12)
+bf = 27.5 * (1 + 2.5 * np.exp(-x / .07)) * 2 ** (-.8 * np.clip(x / 2, 0, 1) / 12)
 big = np.zeros_like(x)
 for mult, g in ((1, 1), (1.5, .55), (2, .7), (3.01, .3)):
-    big += g * laser(bf * mult, lambda tc: 120 + 5200 * math.exp(-tc / .45), drive=3.6, fm=3.5, q=1.8)
+    big += g * laser(bf * mult, lambda tc: 100 + 3400 * math.exp(-tc / .45), drive=3.8, fm=3.5, q=1.8)
 big *= np.minimum(1, x / .01) * np.exp(-x / 1.5)
 place(big, FINAL, .55, 0, .35)
-place(sub_hit(d, 90, 24, 1.8), FINAL, 1.0, 0, .05)
+place(sub_hit(d, 70, 20, 2.0), FINAL, 1.0, 0, .05)
 crack = stft_filter(rng.standard_normal(len(x)) * np.exp(-x / .25),
                     lambda tc, f: 1 / np.sqrt(1 + (3000 / np.maximum(f, 1)) ** 4))
 place(crack, FINAL, .12, 0, .5)
