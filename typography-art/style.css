@@ -1,0 +1,214 @@
+/* INHA TECHNICAL COLLEGE — INDUSTRIAL DESIGN
+   Designed on a 1920×1080 grid. --u equals 1px at full size,
+   so every value below reads as a pixel on the original artboard. */
+
+:root {
+  --cyan: #00adee;   /* logo cyan  */
+  --navy: #1e398c;   /* logo navy  */
+  --green: #009a56;  /* logo green */
+  --ink: #0b0b0f;
+  --paper: #ffffff;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--ink);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.frame {
+  width: min(100vw, calc(100vh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  container-type: inline-size;
+}
+
+.stage {
+  --u: calc(100cqw / 1920);
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: "Space Grotesk", "Noto Sans KR", sans-serif;
+}
+
+/* ---------- left field ---------- */
+
+.inha {
+  position: absolute;
+  left: calc(48 * var(--u));
+  top: calc(-38 * var(--u));
+  font-family: "Anton", sans-serif;
+  font-weight: 400;
+  font-size: calc(640 * var(--u));
+  line-height: 1;
+  letter-spacing: calc(-6 * var(--u));
+  color: var(--paper);
+}
+
+.tc {
+  position: absolute;
+  left: calc(56 * var(--u));
+  top: calc(600 * var(--u));
+  display: flex;
+  flex-direction: column;
+  font-family: "Anton", sans-serif;
+  font-size: calc(170 * var(--u));
+  line-height: .92;
+  letter-spacing: calc(2 * var(--u));
+}
+
+.technical {
+  color: transparent;
+  -webkit-text-stroke: calc(3 * var(--u)) var(--paper);
+}
+
+.college { color: var(--cyan); }
+
+.bar {
+  position: absolute;
+  left: calc(56 * var(--u));
+  top: calc(578 * var(--u));
+  width: calc(240 * var(--u));
+  height: calc(14 * var(--u));
+  background: var(--green);
+}
+
+.meta {
+  font-size: calc(18 * var(--u));
+  font-weight: 700;
+  letter-spacing: calc(3 * var(--u));
+  text-transform: uppercase;
+}
+
+.meta--top {
+  position: absolute;
+  left: calc(340 * var(--u));
+  top: calc(568 * var(--u));
+  display: flex;
+  gap: calc(28 * var(--u));
+  align-items: baseline;
+}
+
+.meta--top span:first-child { color: var(--green); }
+
+.ko {
+  font-family: "Noto Sans KR", sans-serif;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lockup {
+  position: absolute;
+  left: calc(56 * var(--u));
+  bottom: calc(48 * var(--u));
+  width: calc(470 * var(--u));
+  height: auto;
+}
+
+.keywords {
+  position: absolute;
+  list-style: none;
+  left: calc(620 * var(--u));
+  bottom: calc(56 * var(--u));
+  display: flex;
+  gap: calc(14 * var(--u));
+  font-size: calc(16 * var(--u));
+  font-weight: 700;
+  letter-spacing: calc(3 * var(--u));
+}
+
+.keywords li {
+  padding: calc(8 * var(--u)) calc(16 * var(--u));
+  border: calc(2 * var(--u)) solid var(--paper);
+  border-radius: calc(40 * var(--u));
+}
+
+.keywords li:nth-child(2) {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* ---------- right panel ---------- */
+
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: calc(680 * var(--u));
+  height: 100%;
+  background: var(--cyan);
+  color: var(--navy);
+}
+
+.vertical {
+  position: absolute;
+  top: calc(26 * var(--u));
+  right: calc(30 * var(--u));
+  display: flex;
+  flex-direction: row-reverse;
+  gap: calc(10 * var(--u));
+  font-family: "Anton", sans-serif;
+}
+
+.vertical span {
+  writing-mode: vertical-rl;
+  line-height: .86;
+}
+
+.industrial {
+  font-size: calc(250 * var(--u));
+  color: var(--navy);
+}
+
+.design {
+  font-size: calc(250 * var(--u));
+  color: var(--ink);
+}
+
+.meta--panel {
+  position: absolute;
+  left: calc(60 * var(--u));
+  bottom: calc(56 * var(--u));
+  color: var(--ink);
+}
+
+/* ---------- emblem on the seam ---------- */
+
+.seal {
+  position: absolute;
+  left: calc((1240 - 150) * var(--u));
+  top: calc(650 * var(--u));
+  width: calc(300 * var(--u));
+  height: calc(300 * var(--u));
+  padding: calc(20 * var(--u));
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.seal img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* thin tick ruler on the seam */
+.ruler {
+  position: absolute;
+  left: calc(1240 * var(--u));
+  top: 0;
+  width: calc(24 * var(--u));
+  height: 100%;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink) 0 calc(2 * var(--u)),
+    transparent calc(2 * var(--u)) calc(24 * var(--u))
+  );
+  opacity: .55;
+}
