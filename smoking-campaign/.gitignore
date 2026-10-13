@@ -1,3 +1,0 @@
-# Rendered videos are build artifacts
-output/*
-!output/.gitkeep
