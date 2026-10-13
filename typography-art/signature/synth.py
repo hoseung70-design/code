@@ -1,177 +1,183 @@
-"""Heavy streaming-style sting for "The Signature" — an original composition.
+"""Soundtrack for "The Signature" — heavy laser version (original piece).
 
-Streaming-service-style structure (two heavy tonal booms → wide swell → bloom),
-but its own notes and sound design; it does not copy any existing sound logo.
-Timings must match the timeline in index.html.
+"지잉~잉": buzzing, pitch-gliding laser tones built from FM + saw/square cores,
+driven hard and filtered, all synced to the picture (timeline as index.html).
 
-    python3 synth.py  ->  intro.wav (48 kHz, 16-bit, stereo)
+    python3 synth.py  ->  signature.wav (48 kHz, 16-bit, stereo, 8 s)
+
+    0.50–1.70  the pen: a laser charges up — pitch climbs, buzz thickens, orbits L↔R
+    1.70       disc fills: "ZWOOM" — pitch dives into a sub hit, then the beam hums ("잉~")
+    1.75–2.55  ring lettering: a whirling high laser sweep
+    2.20/2.60  shield: two heavy laser blasts (falling chirps)
+    2.90 + i·0.28  each Korean syllable: a short laser "zing"
+    4.15 + j·0.06  English letters: tiny zaps
+    4.60–5.60  the hum charges up ("지이이잉")
+    5.60       big blast "ZWAAANG" + sub, then the beam rings out and dies
 """
+import math
 import wave
 import numpy as np
 
-SR = 48000
-DUR = 8.0
-H1, H2 = 1.25, 1.70            # the two booms (2nd lands as the disc fills)
-SW0, PEAK = 1.80, 5.60          # swell start / bloom on the final shine
+SR, DUR = 48000, 8.0
 N = int(SR * DUR)
 t = np.arange(N) / SR
-rng = np.random.default_rng(2024)
+rng = np.random.default_rng(404)
+
+PEN0, PEN1, RING0, RING1 = .5, 1.7, 1.75, 2.55
+SH0, KR0, KR_STEP, EN0, EN_STEP, FINAL = 2.2, 2.9, .28, 4.15, .06, 5.6
+
+L = np.zeros(N); R = np.zeros(N)
+SL = np.zeros(N); SR_ = np.zeros(N)
 
 
-# ---------------------------------------------------------------- helpers
-def env(start, attack, decay, hold=0.0):
-    x = t - start
-    e = np.where(x < 0, 0.0, np.where(x < attack, x / attack, 1.0))
-    return e * np.exp(-np.clip(x - attack - hold, 0, None) / decay)
+def tt(d):
+    return np.arange(int(d * SR)) / SR
+
+
+def place(sig, start, gain=1., pan=0., verb=.3):
+    i0 = int(start * SR)
+    seg = sig[: N - i0] * gain
+    if np.ndim(pan):
+        p = np.asarray(pan)[: len(seg)]
+        l, r = seg * np.sqrt(.5 * (1 - p)), seg * np.sqrt(.5 * (1 + p))
+    else:
+        l, r = seg * math.sqrt(.5 * (1 - pan)), seg * math.sqrt(.5 * (1 + pan))
+    L[i0:i0 + len(seg)] += l; R[i0:i0 + len(seg)] += r
+    SL[i0:i0 + len(seg)] += verb * l; SR_[i0:i0 + len(seg)] += verb * r
 
 
 def stft_filter(x, gain_fn, n=2048, hop=512):
-    """Time-varying EQ: gain_fn(time_s, freqs_hz) -> per-bin gain."""
     w = np.hanning(n)
     pad = np.concatenate([np.zeros(n), x, np.zeros(n)])
     out = np.zeros_like(pad)
     f = np.fft.rfftfreq(n, 1 / SR)
     for i in range(0, len(pad) - n, hop):
         tc = (i + n / 2 - n) / SR
-        X = np.fft.rfft(pad[i:i + n] * w)
-        out[i:i + n] += np.fft.irfft(X * gain_fn(tc, f), n) * w
-    return out[n:n + len(x)] / 1.5          # hann² overlap at hop=n/4
+        out[i:i + n] += np.fft.irfft(np.fft.rfft(pad[i:i + n] * w) * gain_fn(tc, f), n) * w
+    return out[n:n + len(x)] / 1.5
 
 
-def lowpass(cut, q=0.0):
+def lp(cut, q=0.):
     def g(tc, f):
         c = cut(tc) if callable(cut) else cut
-        res = 1 + q * np.exp(-((f - c) / (0.25 * c + 1)) ** 2)      # resonant bump
-        return res / np.sqrt(1 + (f / c) ** 8)
+        return (1 + q * np.exp(-((f - c) / (.2 * c + 1)) ** 2)) / np.sqrt(1 + (f / c) ** 6)
     return g
 
 
-def band(lo, hi):
-    def g(tc, f):
-        a = lo(tc) if callable(lo) else lo
-        b = hi(tc) if callable(hi) else hi
-        return 1 / np.sqrt(1 + (a / np.maximum(f, 1)) ** 6) / np.sqrt(1 + (f / b) ** 6)
-    return g
+def laser(freq, cut, drive=3.0, fm=2.5, q=1.5):
+    """freq: per-sample Hz array. Saw + square + FM sine, resonant low-pass, hard drive."""
+    ph = np.cumsum(freq) / SR
+    saw = 2 * (ph % 1) - 1
+    sq = np.sign(np.sin(2 * np.pi * ph * 1.002))
+    fmv = np.sin(2 * np.pi * ph + fm * np.sin(2 * np.pi * ph * 2.01))
+    s = .6 * saw + .35 * sq + .5 * fmv
+    s = stft_filter(s, lp(cut, q))
+    return np.tanh(drive * s / (np.max(np.abs(s)) + 1e-9))
 
 
-def saw(freq, phase0=0.0):
-    return 2 * ((freq * t + phase0) % 1.0) - 1
+def sub_hit(d=2.5, f0=110, f1=30, dec=1.0):
+    x = tt(d)
+    f = f1 + (f0 - f1) * np.exp(-x / .08)
+    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-x / dec)
+    return np.tanh(2 * s) / np.tanh(2) * np.minimum(1, x / .003)
 
 
-def noise():
-    return rng.standard_normal(N)
+def chirp(d, f0, f1, curve=3.0):
+    u = tt(d) / d
+    return f1 + (f0 - f1) * np.exp(-u * curve)
 
 
-L = np.zeros(N)
-R = np.zeros(N)
-send = np.zeros((2, N))          # reverb send bus
+# ---------------------------------------------------------------- pen: charging laser "지이잉"
+d = PEN1 - PEN0 + .05
+x = tt(d); u = np.clip(x / (PEN1 - PEN0), 0, 1)
+f = 38 * 2 ** (2.6 * u ** 1.6) * (1 + .012 * np.sin(2 * np.pi * (5 + 9 * u) * x))      # climbing, wobbling
+charge = laser(f, lambda tc: 300 + 5000 * min(1, tc / (PEN1 - PEN0)) ** 2, drive=2.5, fm=4.5)
+charge *= u ** 1.3 * np.where(x > PEN1 - PEN0, np.exp(-(x - (PEN1 - PEN0)) / .02), 1)
+orbit = np.sin(-math.pi / 2 + 2 * math.pi * (.5 - .5 * np.cos(math.pi * u))) * .8
+place(charge, PEN0, .35, orbit, .3)
 
+# ---------------------------------------------------------------- disc fills: ZWOOM + the beam hum "잉~"
+d = 1.4
+zwoom = laser(chirp(d, 420, 42, 4.0), lambda tc: 4000 * math.exp(-tc / .35) + 250, drive=3.5, fm=4.0)
+place(zwoom * np.exp(-tt(d) / .55), PEN1, .55, 0, .35)
+place(sub_hit(3.0, 120, 30, 1.1), PEN1, .9, 0, .05)
 
-def add(sig, gain=1.0, pan=0.0, verb=0.25):
-    global L, R
-    l, r = gain * sig * np.sqrt(0.5 * (1 - pan)), gain * sig * np.sqrt(0.5 * (1 + pan))
-    L += l
-    R += r
-    send[0] += verb * l
-    send[1] += verb * r
+# the beam: a heavy buzzing hum from the disc to the end, charging before the finale
+hx = t - PEN1
+charge_k = np.clip((t - 4.6) / (FINAL - 4.6), 0, 1)
+hum_f = 55 * (1 + .006 * np.sin(2 * np.pi * 5.3 * t) + .003 * np.sin(2 * np.pi * .7 * t)) * 2 ** (charge_k ** 2)
+after = np.clip((t - FINAL) / 1.6, 0, 1)
+hum_f = np.where(t > FINAL, 110 * 2 ** (-.25 * after) * (1 + .01 * np.sin(2 * np.pi * 6 * t)), hum_f)   # sags & wobbles
+hum = laser(hum_f, lambda tc: 750 + 4200 * min(1, max(0, (tc - 4.6) / (FINAL - 4.6))) ** 2
+            + 350 * (1 + math.sin(2 * math.pi * .45 * tc)), drive=3.0, fm=2.0, q=2.0)
+hum_env = np.clip(hx / .35, 0, 1) * (hx > 0)
+hum_env *= .4 + 1.1 * charge_k ** 1.5 + .2 * (.5 + .5 * np.sin(2 * np.pi * .4 * t))            # slow swells
+hum_env *= np.where(t > FINAL, np.exp(-(t - FINAL) / 1.3), 1)
+L += .42 * hum * hum_env
+R += .42 * hum * hum_env                                              # centred: a delayed copy cancels in mono
+SL += .08 * hum * hum_env; SR_ += .08 * hum * hum_env
 
+# ---------------------------------------------------------------- ring lettering: whirling high sweep
+d = RING1 - RING0 + .4
+x = tt(d)
+wf = 900 + 700 * np.sin(2 * np.pi * 2.2 * x) + 900 * x / d
+whirl = laser(wf, 6000, drive=1.8, fm=3.0, q=.5)
+whirl *= np.clip(x / .15, 0, 1) * np.exp(-np.clip(x - (RING1 - RING0), 0, None) / .15)
+place(whirl, RING0, .08, np.sin(2 * np.pi * 1.25 * x) * .9, .5)
 
-# ---------------------------------------------------------------- booms
-def boom(start, pitch, decay, weight):
-    x = np.clip(t - start, 0, None)
-    f = pitch * (1 + 1.6 * np.exp(-x / 0.045))                       # pitch-drop into the note
-    ph = 2 * np.pi * np.cumsum(f) / SR
-    sub = np.sin(ph) * env(start, 0.003, decay)
-    tone = (0.8 * np.sin(2 * ph) * env(start, 0.003, decay * 0.55)
-            + 0.4 * np.sin(3 * ph) * env(start, 0.003, decay * 0.3))
-    knock = stft_filter(noise() * env(start, 0.001, 0.07), band(120, 900))
-    click = stft_filter(noise() * env(start, 0.0005, 0.006), band(2500, 12000))
-    s = np.tanh(1.9 * (sub + tone)) / np.tanh(1.9)
-    return weight * (s + 0.9 * knock + 0.3 * click)
+# ---------------------------------------------------------------- shield: two laser blasts
+for k, at in enumerate((SH0, SH0 + .4)):
+    d = .7
+    blast = laser(chirp(d, 900 - 150 * k, 70, 5.0), lambda tc: 5000 * math.exp(-tc / .15) + 300, drive=3.2, fm=5.0)
+    place(blast * np.exp(-tt(d) / .22), at, .45, (-.3, .3)[k], .35)
+    place(sub_hit(1.2, 100, 40, .3), at, .45, 0, .05)
 
+# ---------------------------------------------------------------- Korean syllables: laser "zing" each
+steps = [0, 3, 5, 7, 5, 10, 8, 12]                                  # a little rising figure
+for i, st in enumerate(steps):
+    d = .45
+    x = tt(d)
+    zf = 220 * 2 ** (st / 12) * (1 + 1.2 * np.exp(-x / .05))          # snaps down into the note
+    zing = laser(zf, lambda tc: 3500 * math.exp(-tc / .2) + 500, drive=2.2, fm=2.5, q=1.0)
+    place(zing * np.exp(-x / .14), KR0 + i * KR_STEP, .22, -.45 + i * .13, .35)
 
-add(boom(H1, 49.0, 0.50, 1.5), verb=0.22)                         # first boom  – G1
-add(boom(H2, 36.7, 0.85, 1.8), verb=0.28)                         # second boom – D1, longer
-add(boom(H2, 18.35, 1.2, 0.6), verb=0.0)                           # sub-octave weight
+# ---------------------------------------------------------------- English letters: tiny zaps
+for j in range(20):
+    d = .09
+    zap = np.sin(2 * np.pi * np.cumsum(chirp(d, 4200, 900, 4)) / SR) * np.exp(-tt(d) / .025)
+    place(zap, EN0 + j * EN_STEP, .06, -.7 + j * .07, .3)
 
-# low brass-like body under the second boom
-brass = sum(saw(73.42 * d, k * .13) for k, d in enumerate((1, 1.003, 0.997)))
-brass = stft_filter(brass * env(H2, 0.03, 1.3, hold=0.2), lowpass(380, q=1.3))
-add(brass, 0.4, verb=0.3)
+# ---------------------------------------------------------------- finale: "ZWAAANG"
+d = DUR - FINAL
+x = tt(d)
+bf = 41.2 * (1 + 2.5 * np.exp(-x / .07)) * 2 ** (-.8 * np.clip(x / 2, 0, 1) / 12)
+big = np.zeros_like(x)
+for mult, g in ((1, 1), (1.5, .55), (2, .7), (3.01, .3)):
+    big += g * laser(bf * mult, lambda tc: 120 + 5200 * math.exp(-tc / .45), drive=3.6, fm=3.5, q=1.8)
+big *= np.minimum(1, x / .01) * np.exp(-x / 1.5)
+place(big, FINAL, .55, 0, .35)
+place(sub_hit(d, 90, 24, 1.8), FINAL, 1.0, 0, .05)
+crack = stft_filter(rng.standard_normal(len(x)) * np.exp(-x / .25),
+                    lambda tc, f: 1 / np.sqrt(1 + (3000 / np.maximum(f, 1)) ** 4))
+place(crack, FINAL, .12, 0, .5)
 
-# ---------------------------------------------------------------- swell
-chord = [36.71, 73.42, 110.00, 146.83, 185.00, 220.00, 329.63, 440.00, 587.33]   # D add9, wide
-rise = np.clip((t - SW0) / (PEAK - SW0), 0, 1)
-amp = np.where(t < SW0, 0, rise ** 1.7) * np.where(t > PEAK, np.exp(-(t - PEAK) / 0.6), 1)
-for side, sgn in ((0, -1), (1, 1)):
-    pad = np.zeros(N)
-    for i, f in enumerate(chord):
-        for v, cents in enumerate((-14, -7, 0, 7, 14)):
-            pad += saw(f * 2 ** (sgn * cents / 1200), (i * 7 + v) * 0.071) / (1 + 0.15 * i)
-    pad = stft_filter(pad * amp, lowpass(lambda tc: 160 + 8800 * np.clip((tc - SW0) / (PEAK - SW0), 0, 1) ** 2.6, q=0.8))
-    (L if side == 0 else R)[:] += 0.13 * pad
-    send[side] += 0.06 * pad
-
-# riser: band of noise sweeping up + a pitched whistle
-k = lambda tc: np.clip((tc - 3.3) / (PEAK - 3.3), 0, 1)
-riser = stft_filter(noise() * np.clip((t - 3.3) / (PEAK - 3.3), 0, 1) ** 2.5 * (t < PEAK),
-                    band(lambda tc: 300 + 5000 * k(tc) ** 2, lambda tc: 900 + 9000 * k(tc) ** 2))
-add(riser, 0.12, verb=0.3)
-x = np.clip((t - 3.7) / (PEAK - 3.7), 0, 1)
-whistle = np.sin(2 * np.pi * np.cumsum(330 * 2 ** (2.5 * x)) / SR) * x ** 3 * (t < PEAK)
-add(whistle, 0.035, pan=0.3, verb=0.6)
-
-# reverse cymbal into the bloom
-rev = stft_filter(noise() * np.clip((t - 4.1) / (PEAK - 4.1), 0, 1) ** 4 * (t < PEAK), band(4000, 16000))
-add(rev, 0.10, verb=0.2)
-
-# ---------------------------------------------------------------- bloom at the peak
-add(boom(PEAK, 36.7, 0.9, 0.8), verb=0.35)
-crash = stft_filter(noise() * env(PEAK, 0.002, 0.8), band(3500, 16000))
-add(crash, 0.13, verb=0.35)
-for side, sgn in ((0, -1), (1, 1)):
-    stab = np.zeros(N)
-    for i, f in enumerate(chord[2:] + [880.00, 1174.66]):
-        for cents in (-9, 0, 9):
-            stab += saw(f * 2 ** (sgn * cents / 1200), i * .11) / (1 + 0.2 * i)
-    stab = stft_filter(stab * env(PEAK, 0.01, 1.0), lowpass(lambda tc: 7000 * np.exp(-max(tc - PEAK, 0) / 1.2) + 600))
-    (L if side == 0 else R)[:] += 0.1 * stab
-    send[side] += 0.025 * stab
-
-
-# ---------------------------------------------------------------- picture-synced extras
-# anticipation: a low rising hum while the pen circles, cut dead at the first boom
-x = np.clip((t - 0.4) / (H1 - 0.4), 0, 1)
-ant = np.sin(2 * np.pi * np.cumsum(30 + 40 * x ** 2) / SR) * x ** 2 * (t < H1)
-ant += stft_filter(noise() * x ** 3 * (t < H1), band(150, 1200)) * .6
-add(ant, .35, verb=.2)
-# shield + each Korean syllable: soft low taps that ride inside the swell
-for at in (2.2, 2.6):
-    add(boom(at, 60.0, .25, .25), verb=.2)
-for i in range(8):
-    add(boom(2.9 + i * .28, 73.4, .18, .12), pan=-.4 + i * .11, verb=.25)
-
-# ---------------------------------------------------------------- reverb (stereo hall)
-ir_len = int(SR * 2.8)
-ir_t = np.arange(ir_len) / SR
-for side, s in ((0, 11), (1, 12)):
-    ir = np.random.default_rng(s).standard_normal(ir_len) * np.exp(-ir_t / 0.8)
-    ir[: int(0.012 * SR)] = 0                                          # pre-delay
-    ir = stft_filter(np.concatenate([ir, np.zeros(N - ir_len)]) if ir_len < N else ir, lowpass(5500))[:ir_len]
-    ir /= np.sqrt(np.sum(ir ** 2))                                     # unit energy
-    n = N + ir_len
-    wet = np.fft.irfft(np.fft.rfft(send[side], n) * np.fft.rfft(ir, n), n)[:N]
-    (L if side == 0 else R)[:] += 0.9 * wet
+# ---------------------------------------------------------------- reverb (sub kept dry)
+ir_n = int(SR * 3.5); ir_t = np.arange(ir_n) / SR
+for send, out, s in ((SL, L, 7), (SR_, R, 8)):
+    ir = np.random.default_rng(s).standard_normal(ir_n) * np.exp(-ir_t / 1.0)
+    ir[: int(.025 * SR)] = 0
+    ir = np.convolve(ir, np.ones(7) / 7, mode='same')
+    ir /= np.sqrt(np.sum(ir ** 2))
+    n = N + ir_n
+    wet = np.fft.irfft(np.fft.rfft(send, n) * np.fft.rfft(ir, n), n)[:N]
+    out += .8 * stft_filter(wet, lambda tc, f: 1 / np.sqrt(1 + (150 / np.maximum(f, 1)) ** 4))
 
 # ---------------------------------------------------------------- master
-fade = np.clip((DUR - t) / 0.7, 0, 1)
-mix = np.stack([L, R], axis=1) * fade[:, None]
+mix = np.stack([L, R], 1) * np.clip((DUR - t) / .6, 0, 1)[:, None]
 mix /= np.max(np.abs(mix))
-mix = np.tanh(1.6 * mix) / np.tanh(1.6)                              # glue / soft clip
-mix *= 0.89 / np.max(np.abs(mix))                                    # ≈ -1 dBFS
-with wave.open("signature.wav", "wb") as w:
-    w.setnchannels(2)
-    w.setsampwidth(2)
-    w.setframerate(SR)
-    w.writeframes((mix * 32767).astype("<i2").tobytes())
-print("signature.wav", DUR, "s")
+mix = np.tanh(1.6 * mix) / np.tanh(1.6)
+mix *= .89 / np.max(np.abs(mix))
+with wave.open('signature.wav', 'wb') as w:
+    w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR)
+    w.writeframes((mix * 32767).astype('<i2').tobytes())
+print('signature.wav', DUR, 's')
