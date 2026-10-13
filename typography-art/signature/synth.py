@@ -1,4 +1,4 @@
-"""Soundtrack for "The Signature" — cosmic / heavy version (original piece).
+"""Soundtrack for "The Signature" — heavy space-tech version (original piece).
 
     python3 synth.py  ->  signature.wav (48 kHz, 16-bit, stereo, 8 s)
 
@@ -165,20 +165,66 @@ for j in range(20):
 # ---------------------------------------------------------------- finale: braam + sub drop + shimmer
 d = DUR - FINAL
 x = tt(d)
-env_b = np.minimum(1, x / .05) * np.exp(-x / 1.6)
+env_b = np.minimum(1, x / .04) * np.exp(-x / 2.4)
+bend = 2 ** (-1.2 * np.clip(x / 2.2, 0, 1) ** 1.5 / 12)            # sinks ~1 semitone, "space-weight"
 braam = np.zeros_like(x)
-for nte, g in (('E1', 1), ('E2', .9), ('B2', .7), ('E3', .5), ('G3', .35)):
-    for dt in (-.006, -.002, .002, .006):
-        braam += g * saw_t(hz(nte) * (1 + dt), x, rng.random())
-braam = stft_filter(braam * env_b, lp(lambda tc: 90 + 1600 * math.exp(-max(tc, 0) / .5)))   # brassy "bwaaam"
-braam = np.tanh(1.8 * braam / (np.max(np.abs(braam)) + 1e-9))
-place(braam, FINAL, .85, 0, .5)
-place(impact(d, 60, 22, 1.8), FINAL, .9, 0, .12)
+for nte, g in (('E1', 1), ('E2', .9), ('B2', .7), ('E3', .5), ('G3', .35), ('A#2', .25)):
+    for dt in (-.007, -.0025, .0025, .007):
+        braam += g * (2 * ((np.cumsum(hz(nte) * (1 + dt) * bend) / SR + rng.random()) % 1) - 1)
+braam = stft_filter(braam * env_b, lp(lambda tc: 80 + 1900 * math.exp(-max(tc, 0) / .6)))
+braam = np.tanh(2.6 * braam / (np.max(np.abs(braam)) + 1e-9))      # driven, gritty
+place(braam, FINAL, 1.0, 0, .45)
+place(impact(d, 55, 20, 2.0), FINAL, 1.0, 0, .12)
 sh = np.zeros_like(x)
 for f in (hz('B5'), hz('E6'), hz('G#6'), hz('B6'), hz('E7')):
     sh += np.sin(2 * np.pi * f * x + rng.random() * 6) * (.5 + .5 * np.sin(2 * np.pi * rng.uniform(3, 7) * x))
 sh *= np.minimum(1, x / .6) * np.exp(-x / 1.4)
 place(sh, FINAL, .08, 0, 1.0)
+
+
+# ================================================================ space-tech layers
+# engine rumble: brown noise under 120 Hz with a slow 2 Hz throb, rising to the finale
+brown = np.cumsum(rng.standard_normal(N)); brown -= np.convolve(brown, np.ones(4801) / 4801, mode='same')
+brown /= np.max(np.abs(brown))
+rumble = stft_filter(brown, lp(120)) * (1 + .35 * np.sin(2 * np.pi * 2 * t))
+r_env = np.clip(t / 1.5, 0, 1) * (.35 + .65 * np.clip((t - PEN0) / (FINAL - PEN0), 0, 1)) * np.clip((DUR - .4 - t) / 2.2, 0, 1)
+L += .5 * rumble * r_env; R += .5 * np.roll(rumble, 513) * r_env
+
+# sonar ping before anything appears, echoing through space
+x = tt(3.0)
+sonar = np.sin(2 * np.pi * 1180 * x) * np.exp(-x / .35) * np.minimum(1, x / .003)
+place(sonar, .12, .10, -.3, 1.0)
+place(sonar * .5, .12 + .42, .10, .4, 1.0)                         # first echo
+
+# radio telemetry: short beep pairs around the pen and the English letters
+def beep(f, d=.05):
+    x = tt(d + .02)
+    sq = np.sign(np.sin(2 * np.pi * f * x)) * (x < d)
+    return stft_filter(sq, bp(400, 5000)) * np.minimum(1, x / .002)
+for at, f in ((.75, 1760), (.83, 2350), (1.25, 1760), (1.33, 1320), (2.65, 2640), (2.72, 1980)):
+    place(beep(f), at, .05, rng.uniform(-.8, .8), .5)
+for j in range(20):
+    if j % 3 == 0:
+        place(beep(1500 + 180 * (j % 5), .03), EN0 + j * EN_STEP + .01, .03, rng.uniform(-.9, .9), .6)
+
+# ring-modulated metal texture drifting across the field
+rm = stft_filter(rng.standard_normal(N), bp(300, 3000)) * np.sin(2 * np.pi * (1700 + 300 * np.sin(2 * np.pi * .13 * t)) * t)
+rm_env = np.clip((t - .3) / 2, 0, 1) * np.clip((DUR - .5 - t) / 2, 0, 1) * (.5 + .5 * np.sin(2 * np.pi * .31 * t) ** 2)
+L += .035 * rm * rm_env * (.5 + .5 * np.sin(2 * np.pi * .2 * t))
+R += .035 * rm * rm_env * (.5 - .5 * np.sin(2 * np.pi * .2 * t))
+
+# Doppler fly-by on the camera pull-back (pitch falls, passes left → right)
+d = 1.6; x = tt(d); u = x / d
+fly_f = 900 * 2 ** (-2.2 * u)
+fly = np.sin(2 * np.pi * np.cumsum(fly_f) / SR) * .6 + stft_filter(rng.standard_normal(len(x)), bp(500, 4000)) * .5
+fly *= np.sin(np.pi * u) ** 2
+place(fly, 1.75, .14, np.tanh((u - .5) * 5), .5)
+
+# reverse swell sucking into the finale
+d = FINAL - 4.4; x = tt(d); u = x / d
+swell = stft_filter(rng.standard_normal(len(x)), bp(lambda tc: 200 + 4000 * (tc / d) ** 2, lambda tc: 900 + 9000 * (tc / d) ** 2))
+swell += .5 * np.sin(2 * np.pi * np.cumsum(110 * 2 ** (3 * u ** 2)) / SR)
+place(swell * u ** 3, 4.4, .18, 0, .3)
 
 # ---------------------------------------------------------------- space reverb (long, dark)
 ir_n = int(SR * 7.0); ir_t = np.arange(ir_n) / SR
