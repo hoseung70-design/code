@@ -1,6 +1,7 @@
-/* INHA TECHNICAL COLLEGE — INDUSTRIAL DESIGN
+/* INHA TECHNICAL COLLEGE — INDUSTRIAL DESIGN (motion)
    Designed on a 1920×1080 grid. --u equals 1px at full size,
-   so every value below reads as a pixel on the original artboard. */
+   so every value below reads as a pixel on the original artboard.
+   Everything runs on one 10s loop: build in → hold → clear out. */
 
 :root {
   --cyan: #00adee;   /* logo cyan  */
@@ -8,6 +9,8 @@
   --green: #009a56;  /* logo green */
   --ink: #0b0b0f;
   --paper: #ffffff;
+  --T: 10s;
+  --ease: cubic-bezier(.75, 0, .2, 1);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -35,107 +38,90 @@ body {
   overflow: hidden;
   background: var(--ink);
   color: var(--paper);
-  font-family: "Space Grotesk", "Noto Sans KR", sans-serif;
+  font-family: "Anton", "Impact", sans-serif;
 }
 
-/* ---------- left field ---------- */
+/* every animated piece shares the loop */
+.inha span,
+.technical span,
+.college,
+.bar,
+.panel,
+.industrial,
+.design,
+.seal,
+.ruler {
+  animation-duration: var(--T);
+  animation-iteration-count: infinite;
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+}
+
+/* ---------- INHA ---------- */
 
 .inha {
   position: absolute;
   left: calc(48 * var(--u));
   top: calc(-38 * var(--u));
-  font-family: "Anton", sans-serif;
   font-weight: 400;
   font-size: calc(640 * var(--u));
   line-height: 1;
   letter-spacing: calc(-6 * var(--u));
-  color: var(--paper);
+  clip-path: inset(0 -10% 0 -10%);
+}
+
+.inha span {
+  display: inline-block;
+  animation-name: rise, flash;
+  animation-delay: calc(.25s + var(--i) * .12s), calc(var(--i) * .12s);
+}
+
+/* ---------- TECHNICAL / COLLEGE ---------- */
+
+.bar {
+  position: absolute;
+  left: calc(56 * var(--u));
+  top: calc(612 * var(--u));
+  width: calc(240 * var(--u));
+  height: calc(14 * var(--u));
+  background: var(--green);
+  transform-origin: left center;
+  animation-name: grow;
+  animation-delay: .7s;
 }
 
 .tc {
   position: absolute;
   left: calc(56 * var(--u));
-  top: calc(600 * var(--u));
+  top: calc(650 * var(--u));
   display: flex;
   flex-direction: column;
-  font-family: "Anton", sans-serif;
   font-size: calc(170 * var(--u));
   line-height: .92;
   letter-spacing: calc(2 * var(--u));
 }
 
 .technical {
+  display: block;
+  clip-path: inset(0 -5% 0 0);
   color: transparent;
   -webkit-text-stroke: calc(3 * var(--u)) var(--paper);
 }
 
-.college { color: var(--cyan); }
-
-.bar {
-  position: absolute;
-  left: calc(56 * var(--u));
-  top: calc(578 * var(--u));
-  width: calc(240 * var(--u));
-  height: calc(14 * var(--u));
-  background: var(--green);
+.technical span {
+  display: inline-block;
+  animation-name: rise;
+  animation-delay: calc(.9s + var(--i) * .05s);
 }
 
-.meta {
-  font-size: calc(18 * var(--u));
-  font-weight: 700;
-  letter-spacing: calc(3 * var(--u));
-  text-transform: uppercase;
+.college {
+  display: block;
+  color: var(--cyan);
+  animation-name: wipe;
+  animation-delay: 1.3s;
 }
 
-.meta--top {
-  position: absolute;
-  left: calc(340 * var(--u));
-  top: calc(568 * var(--u));
-  display: flex;
-  gap: calc(28 * var(--u));
-  align-items: baseline;
-}
-
-.meta--top span:first-child { color: var(--green); }
-
-.ko {
-  font-family: "Noto Sans KR", sans-serif;
-  font-weight: 900;
-  letter-spacing: 0;
-}
-
-.lockup {
-  position: absolute;
-  left: calc(56 * var(--u));
-  bottom: calc(48 * var(--u));
-  width: calc(470 * var(--u));
-  height: auto;
-}
-
-.keywords {
-  position: absolute;
-  list-style: none;
-  left: calc(620 * var(--u));
-  bottom: calc(56 * var(--u));
-  display: flex;
-  gap: calc(14 * var(--u));
-  font-size: calc(16 * var(--u));
-  font-weight: 700;
-  letter-spacing: calc(3 * var(--u));
-}
-
-.keywords li {
-  padding: calc(8 * var(--u)) calc(16 * var(--u));
-  border: calc(2 * var(--u)) solid var(--paper);
-  border-radius: calc(40 * var(--u));
-}
-
-.keywords li:nth-child(2) {
-  background: var(--paper);
-  color: var(--ink);
-}
-
-/* ---------- right panel ---------- */
+/* ---------- cyan panel ---------- */
 
 .panel {
   position: absolute;
@@ -143,8 +129,9 @@ body {
   right: 0;
   width: calc(680 * var(--u));
   height: 100%;
+  overflow: hidden;
   background: var(--cyan);
-  color: var(--navy);
+  animation-name: panel;
 }
 
 .vertical {
@@ -154,29 +141,42 @@ body {
   display: flex;
   flex-direction: row-reverse;
   gap: calc(10 * var(--u));
-  font-family: "Anton", sans-serif;
 }
 
 .vertical span {
   writing-mode: vertical-rl;
   line-height: .86;
+  font-size: calc(250 * var(--u));
 }
 
 .industrial {
-  font-size: calc(250 * var(--u));
   color: var(--navy);
+  animation-name: drop;
+  animation-delay: .5s;
 }
 
 .design {
-  font-size: calc(250 * var(--u));
   color: var(--ink);
+  animation-name: lift;
+  animation-delay: .75s;
 }
 
-.meta--panel {
+/* tick ruler on the seam, always scrolling */
+.ruler {
   position: absolute;
-  left: calc(60 * var(--u));
-  bottom: calc(56 * var(--u));
-  color: var(--ink);
+  left: calc(1240 * var(--u));
+  top: 0;
+  width: calc(24 * var(--u));
+  height: 100%;
+  opacity: .55;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink) 0 calc(2 * var(--u)),
+    transparent calc(2 * var(--u)) calc(24 * var(--u))
+  );
+  animation-name: panel, ticks;
+  animation-duration: var(--T), 1s;
+  animation-timing-function: var(--ease), linear;
 }
 
 /* ---------- emblem on the seam ---------- */
@@ -190,25 +190,76 @@ body {
   padding: calc(20 * var(--u));
   border-radius: 50%;
   background: var(--ink);
+  animation-name: pop;
+  animation-delay: 1.1s;
 }
 
 .seal img {
   display: block;
   width: 100%;
   height: 100%;
+  animation: spin var(--T) linear infinite;
 }
 
-/* thin tick ruler on the seam */
-.ruler {
-  position: absolute;
-  left: calc(1240 * var(--u));
-  top: 0;
-  width: calc(24 * var(--u));
-  height: 100%;
-  background: repeating-linear-gradient(
-    to bottom,
-    var(--ink) 0 calc(2 * var(--u)),
-    transparent calc(2 * var(--u)) calc(24 * var(--u))
-  );
-  opacity: .55;
+/* ---------- keyframes (percent of the 10s loop) ---------- */
+
+@keyframes rise {
+  0%        { transform: translateY(105%); }
+  9%, 72%   { transform: translateY(0); }
+  82%, 100% { transform: translateY(-105%); }
+}
+
+/* a cyan wave runs through INHA mid-loop */
+@keyframes flash {
+  0%, 44%, 52%, 100% { color: var(--paper); }
+  47%, 49%           { color: var(--cyan); }
+}
+
+@keyframes grow {
+  0%        { transform: scaleX(0); }
+  8%, 72%   { transform: scaleX(1); transform-origin: left center; }
+  80%, 100% { transform: scaleX(0); transform-origin: right center; }
+}
+
+@keyframes wipe {
+  0%        { clip-path: inset(0 100% 0 0); }
+  9%, 70%   { clip-path: inset(0 0 0 0); }
+  80%, 100% { clip-path: inset(0 0 0 100%); }
+}
+
+@keyframes panel {
+  0%        { clip-path: inset(0 0 0 100%); }
+  7%, 86%   { clip-path: inset(0 0 0 0); }
+  95%, 100% { clip-path: inset(0 0 0 100%); }
+}
+
+@keyframes drop {
+  0%        { transform: translateY(-105%); }
+  10%, 76%  { transform: translateY(0); }
+  86%, 100% { transform: translateY(105%); }
+}
+
+@keyframes lift {
+  0%        { transform: translateY(105%); }
+  10%, 76%  { transform: translateY(0); }
+  86%, 100% { transform: translateY(-105%); }
+}
+
+@keyframes pop {
+  0%        { transform: scale(0) rotate(-120deg); }
+  10%, 70%  { transform: scale(1) rotate(0); }
+  78%, 100% { transform: scale(0) rotate(120deg); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ticks {
+  to { background-position: 0 calc(24 * var(--u)); }
+}
+
+/* show the finished poster, still, for anyone who prefers less motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
 }
