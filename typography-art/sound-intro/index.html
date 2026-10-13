@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INHA Sound Intro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #000; overflow: hidden; }
+    body { display: grid; place-items: center; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+    #play {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      background: transparent; border: 0; color: #fff; cursor: pointer;
+      font-size: 18px; letter-spacing: .3em;
+    }
+    #play span { padding: 14px 28px; border: 1px solid rgba(255,255,255,.5); border-radius: 40px; }
+    #play[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080" aria-label="두 번의 타격음과 함께 인하공업전문대학 엠블럼이 떨어지고, 빛줄기와 함께 로고가 완성되는 인트로"></canvas>
+  <button id="play" type="button"><span>▶ PLAY (SOUND ON)</span></button>
+  <audio id="snd" src="intro.wav" preload="auto"></audio>
+  <script>
+  /*
+   * Sound-synced intro, 6.5 s, 1920×1080. Timings match synth.py.
+   *   0.50  hit 1  – cyan disc drops in, shock ring, shake
+   *   0.95  hit 2  – navy shield slams in from the camera, flash
+   *   1.00→ swell  – ring lettering sweeps on, light rays build behind
+   *   2.40→        – emblem slides left, wordmark wipes on
+   *   4.50  peak   – white bloom, rays burst out
+   *   5.90→6.50    – fade to black
+   */
+  const W = 1920, H = 1080, DUR = 6.5;
+  const H1 = .50, H2 = .95, SW0 = 1.0, PEAK = 4.5;
+  const CYAN = '#00adee', NAVY = '#1e398c', GREEN = '#009a56';
+
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const outBack = k => 1 + 2.7 * (k - 1) ** 3 + 1.7 * (k - 1) ** 2;
+  const outExpo = k => k === 1 ? 1 : 1 - 2 ** (-10 * k);
+  const inOut = k => k < .5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+
+  // final lockup geometry (same proportions as the source file)
+  const LS = 1500 / 886;                                 // lockup scale
+  const LX = (W - 1500) / 2, LY = (H - 224 * LS) / 2;
+  const EMB_FINAL = { x: LX + 2 * LS + 223 * LS / 2, y: LY + 1 * LS + 223 * LS / 2, s: 223 * LS };
+  const EMB_START = { x: W / 2, y: H / 2, s: 560 };
+  const WM = { x: LX + (755 - 516) * LS, y: LY + (470 - 428) * LS, w: 650 * LS, h: 145 * LS };
+
+  // light rays (deterministic)
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const RAYS = Array.from({ length: 260 }, () => ({
+    a: rnd() * Math.PI * 2, w: .6 + rnd() * 2.6, len: .4 + rnd() * .9,
+    c: [CYAN, CYAN, NAVY, GREEN, '#ffffff'][Math.floor(rnd() * 5)],
+    spd: (rnd() - .5) * .25, off: rnd(),
+  }));
+
+  const img = {};
+  const names = ['disk', 'ring', 'shield', 'wordmark'];
+  let loaded = 0;
+
+  function shake(t) {
+    const hit = (h, amp) => { const x = t - h; return x < 0 || x > .35 ? 0 : amp * Math.exp(-x * 14); };
+    const a = hit(H1, 10) + hit(H2, 18) + hit(PEAK, 8);
+    return [Math.sin(t * 91) * a, Math.cos(t * 77) * a];
+  }
+
+  function shock(t, start, color, maxR, width) {
+    const k = prog(t, start, start + .6);
+    if (k <= 0 || k >= 1) return;
+    ctx.globalAlpha = (1 - k) ** 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width * (1 - k) + 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, lerp(150, maxR, outExpo(k)), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function render(t) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    const [sx, sy] = shake(t);
+    const move = inOut(prog(t, 2.4, 3.4));             // emblem centre → lockup position
+    const ex = lerp(EMB_START.x, EMB_FINAL.x, move) + sx;
+    const ey = lerp(EMB_START.y, EMB_FINAL.y, move) + sy;
+    const es = lerp(EMB_START.s, EMB_FINAL.s, move);
+    const swell = prog(t, SW0, PEAK) ** 1.6 * (t > PEAK ? Math.exp(-(t - PEAK) / .7) : 1);
+
+    // --- light rays behind the emblem ---
+    if (swell > .002) {
+      ctx.setTransform(1, 0, 0, 1, ex, ey);
+      ctx.globalCompositeOperation = 'lighter';
+      const burst = t > PEAK ? outExpo(prog(t, PEAK, PEAK + 1.2)) : 0;
+      for (const r of RAYS) {
+        const a = r.a + r.spd * t;
+        const inner = es * .48;
+        const L = inner + (380 + 900 * burst) * r.len * (.3 + swell);
+        const flick = .65 + .35 * Math.sin(t * 9 + r.off * 40);
+        const g = ctx.createLinearGradient(Math.cos(a) * inner, Math.sin(a) * inner, Math.cos(a) * L, Math.sin(a) * L);
+        g.addColorStop(0, r.c);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.strokeStyle = g;
+        ctx.globalAlpha = Math.min(1, swell * flick * .8);
+        ctx.lineWidth = r.w * (1 + burst * 2);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+        ctx.lineTo(Math.cos(a) * L, Math.sin(a) * L);
+        ctx.stroke();
+      }
+      // soft halo
+      const halo = ctx.createRadialGradient(0, 0, es * .3, 0, 0, es * 1.6);
+      halo.addColorStop(0, `rgba(0,173,238,${.35 * swell})`);
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = halo;
+      ctx.fillRect(-es * 2, -es * 2, es * 4, es * 4);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // --- emblem layers ---
+    ctx.setTransform(1, 0, 0, 1, ex, ey);
+    shock(t, H1, CYAN, 900, 22);
+    shock(t, H2, '#ffffff', 1100, 30);
+
+    // hit 1: disc drops with overshoot
+    const k1 = prog(t, H1, H1 + .32);
+    if (k1 > 0) {
+      const s = es * outBack(k1);
+      ctx.globalAlpha = clamp(k1 * 4);
+      ctx.drawImage(img.disk, -s / 2, -s / 2, s, s);
+    }
+
+    // swell: ring lettering sweeps on clockwise
+    const kr = inOut(prog(t, SW0, 2.2));
+    if (kr > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, es, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * kr);
+      ctx.closePath();
+      ctx.clip();
+      ctx.globalAlpha = 1;
+      ctx.rotate((1 - kr) * -.6);
+      ctx.drawImage(img.ring, -es / 2, -es / 2, es, es);
+      ctx.restore();
+    }
+
+    // hit 2: shield slams in from the camera
+    const k2 = prog(t, H2, H2 + .16);
+    if (k2 > 0) {
+      const s = es * lerp(3.2, 1, outExpo(k2));
+      ctx.globalAlpha = clamp(k2 * 2.5);
+      ctx.drawImage(img.shield, -s / 2, -s / 2, s, s);
+    }
+
+    // --- wordmark wipes on with a light edge ---
+    const kw = inOut(prog(t, 2.8, 4.0));
+    if (kw > 0) {
+      ctx.setTransform(1, 0, 0, 1, sx, sy);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(WM.x - 10, WM.y - 20, (WM.w + 20) * kw, WM.h + 40);
+      ctx.clip();
+      ctx.globalAlpha = 1;
+      ctx.drawImage(img.wordmark, WM.x + (1 - kw) * -60, WM.y, WM.w, WM.h);
+      ctx.restore();
+      if (kw < 1) {
+        const edge = WM.x - 10 + (WM.w + 20) * kw;
+        const g = ctx.createLinearGradient(edge - 60, 0, edge + 4, 0);
+        g.addColorStop(0, 'rgba(0,173,238,0)');
+        g.addColorStop(1, 'rgba(180,240,255,.95)');
+        ctx.fillStyle = g;
+        ctx.fillRect(edge - 60, WM.y - 30, 64, WM.h + 60);
+      }
+    }
+
+    // --- flashes ---
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const flash = (h, peak, d) => { const x = t - h; return x < 0 ? 0 : peak * Math.exp(-x / d); };
+    const f = flash(H2, .35, .08) + flash(PEAK, .55, .18);
+    if (f > .003) {
+      ctx.globalAlpha = Math.min(f, 1);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // --- fade out ---
+    const fo = prog(t, 5.9, DUR);
+    if (fo > 0) {
+      ctx.globalAlpha = fo;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function boot() {
+    window.render = render;
+    window.ready = true;
+    render(0);
+    if (window.__capture) { document.getElementById('play').hidden = true; return; }
+    const btn = document.getElementById('play');
+    const snd = document.getElementById('snd');
+    btn.addEventListener('click', () => {
+      btn.hidden = true;
+      snd.currentTime = 0;
+      snd.play().catch(() => {});
+      const t0 = performance.now();
+      const loop = now => {
+        const t = snd.paused || snd.ended ? (now - t0) / 1000 : snd.currentTime;   // follow the audio clock
+        render(Math.min(t, DUR));
+        if (t < DUR) requestAnimationFrame(loop); else btn.hidden = false;
+      };
+      requestAnimationFrame(loop);
+    });
+  }
+
+  names.forEach(n => {
+    const im = new Image();
+    im.onload = () => { if (++loaded === names.length) boot(); };
+    im.src = n + '.svg';
+    img[n] = im;
+  });
+  </script>
+</body>
+</html>
