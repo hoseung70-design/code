@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INHA Stardust Signature</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #02040b; overflow: hidden; }
+    body { display: grid; place-items: center; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+    #play { position: fixed; inset: 0; display: grid; place-items: center; background: transparent;
+            border: 0; color: #fff; cursor: pointer; font-size: 18px; letter-spacing: .3em; }
+    #play span { padding: 14px 28px; border: 1px solid rgba(255,255,255,.5); border-radius: 40px; }
+    #play[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080" aria-label="별가루 같은 작은 점들이 소용돌이치며 모여 인하공업전문대학 시그니처가 완성되는 인트로"></canvas>
+  <button id="play" type="button"><span>▶ PLAY (SOUND ON)</span></button>
+  <audio id="snd" src="stardust.wav" preload="auto"></audio>
+  <script src="logo-data.js"></script>
+  <script>
+  /*
+   * "Stardust Signature" — 9 s, 1920×1080, synced to stardust.wav (timeline shared with synth.py).
+   *   0.0–1.0   dots twinkle into being as a starfield
+   *   1.0→      they drift into a slow galaxy swirl
+   *   emblem    dots spiral in and land 1.6–2.6
+   *   Korean    인하공업전문대학 lands left→right 2.4–3.6
+   *   English   INHA TECHNICAL COLLEGE lands left→right 3.4–4.4
+   *   5.0       dots hand over to the crisp artwork: flash, bloom, shine sweep
+   *   8.4–9.0   fade out
+   * render(t) is a pure function of time, so frames export exactly.
+   */
+  const W = 1920, H = 1080, DUR = 9.0;
+  const LOCK = 5.0, FLY = 1.4;
+  const SCALE = 1.45, OX = 1030, OY = 515;           // artwork centre → frame centre, enlarged
+  const PITCH = 5;                                    // dot grid on screen
+
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const ease = k => k < .5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+  const outExpo = k => k >= 1 ? 1 : 1 - 2 ** (-10 * k);
+  const toScreen = (x, y) => [W / 2 + (x - OX) * SCALE, H / 2 + (y - OY) * SCALE];
+
+  let seed = 21;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  let logo, D = [], STARS = [];
+  const shineCv = document.createElement('canvas');
+  shineCv.width = W; shineCv.height = H;
+  const shineCtx = shineCv.getContext('2d');
+
+  function build() {
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const o = off.getContext('2d');
+    o.setTransform(SCALE, 0, 0, SCALE, W / 2 - OX * SCALE, H / 2 - OY * SCALE);
+    o.drawImage(logo, 0, 0, 1920, 1080);
+    const px = o.getImageData(0, 0, W, H).data;
+    for (let y = 0; y < H; y += PITCH)
+      for (let x = 0; x < W; x += PITCH) {
+        const i = (y * W + x) * 4;
+        if (px[i + 3] < 140) continue;
+        // which part of the signature (in artwork coordinates)
+        const ax = (x - W / 2) / SCALE + OX, ay = (y - H / 2) / SCALE + OY;
+        let land;
+        if (ax < 770) {                                               // emblem: spiral in from the rim
+          const r = Math.hypot(ax - 621, ay - 515) / 132;
+          land = 1.6 + (1 - clamp(r)) * .7 + rnd() * .3;
+        } else if (ay < 540) land = 2.4 + (ax - 780) / 800 * 1.0 + rnd() * .2;   // Korean
+        else land = 3.4 + (ax - 780) / 800 * 0.8 + rnd() * .2;                  // English
+        // start: a point in a wide, slowly turning galaxy disc
+        const ang = rnd() * Math.PI * 2, rad = 250 + Math.pow(rnd(), .7) * 1050;
+        D.push({
+          tx: x + PITCH / 2, ty: y + PITCH / 2, c: [px[i], px[i + 1], px[i + 2]],
+          ang, rad, z: .4 + rnd() * .9, tw: rnd() * 6.28, born: rnd() * .9,
+          land, spin: (rnd() < .5 ? 1 : -1) * (1.2 + rnd() * 1.6),
+        });
+      }
+    // background stars that never join
+    for (let k = 0; k < 260; k++) STARS.push({ x: rnd() * W, y: rnd() * H, r: .4 + rnd() * 1.3, tw: rnd() * 6.28, a: .2 + rnd() * .5 });
+  }
+
+  // position of a dot while it is still part of the swirling galaxy
+  function galaxy(d, t) {
+    const swirl = .08 * t + .025 * t * t;                              // the disc slowly winds up
+    const a = d.ang + swirl * (900 / d.rad);
+    return [W / 2 + Math.cos(a) * d.rad * 1.25, H / 2 + Math.sin(a) * d.rad * .55];
+  }
+
+  function render(t) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    const g = ctx.createRadialGradient(W / 2, H * .48, 50, W / 2, H / 2, W * .7);
+    g.addColorStop(0, '#0c1838'); g.addColorStop(.6, '#050a1c'); g.addColorStop(1, '#010207');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // far stars
+    for (const s of STARS) {
+      ctx.globalAlpha = s.a * (.55 + .45 * Math.sin(t * 2.3 + s.tw));
+      ctx.fillStyle = '#cfe9ff';
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+
+    const crisp = ease(prog(t, LOCK - .15, LOCK + .45));
+    const dotsA = 1 - crisp;
+    const breathe = 1 + .012 * Math.sin(Math.PI * prog(t, LOCK, 8.4));
+
+    if (dotsA > .002) {
+      ctx.globalCompositeOperation = 'lighter';
+      for (const d of D) {
+        const born = prog(t, d.born, d.born + .5);
+        if (born <= 0) continue;
+        const k = ease(prog(t, d.land - FLY, d.land));
+        let x, y;
+        if (k <= 0) [x, y] = galaxy(d, t);
+        else {
+          // spiral from the galaxy position into the target
+          const [gx, gy] = galaxy(d, d.land - FLY);
+          const dx = gx - d.tx, dy = gy - d.ty, r = 1 - k;
+          const a = d.spin * (1 - k) * 1.2;
+          x = d.tx + (dx * Math.cos(a) - dy * Math.sin(a)) * r;
+          y = d.ty + (dx * Math.sin(a) + dy * Math.cos(a)) * r;
+        }
+        x = W / 2 + (x - W / 2) * breathe; y = H / 2 + (y - H / 2) * breathe;
+        // twinkling white-cyan stardust that warms into the artwork colour as it lands
+        const tw = .6 + .4 * Math.sin(t * 5 + d.tw);
+        const cr = lerp(170, d.c[0], k), cg = lerp(225, d.c[1], k), cb = lerp(255, d.c[2], k);
+        const size = lerp(1.4 * d.z, PITCH * .62, k);
+        const flash = Math.exp(-Math.max(0, t - d.land) / .12) * (t >= d.land);   // a spark on landing
+        ctx.globalAlpha = Math.min(1, dotsA * born * lerp(tw * .8, 1, k) + flash * .6);   // >1 is ignored by canvas
+        ctx.fillStyle = `rgb(${cr | 0},${cg | 0},${cb | 0})`;
+        ctx.beginPath();
+        ctx.arc(x, y, size * (1 + flash * .8), 0, 6.2832);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // crisp artwork takes over
+    if (crisp > .001) {
+      ctx.globalAlpha = crisp;
+      const s = SCALE * breathe;
+      ctx.setTransform(s, 0, 0, s, W / 2 - OX * s, H / 2 - OY * s);
+      ctx.drawImage(logo, 0, 0, 1920, 1080);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // shine sweep, masked to the artwork on an offscreen canvas
+      const sh = prog(t, LOCK + .3, LOCK + 1.4);
+      if (sh > 0 && sh < 1) {
+        const o = shineCtx;
+        o.setTransform(1, 0, 0, 1, 0, 0);
+        o.globalCompositeOperation = 'source-over';
+        o.clearRect(0, 0, W, H);
+        o.setTransform(s, 0, 0, s, W / 2 - OX * s, H / 2 - OY * s);
+        o.drawImage(logo, 0, 0, 1920, 1080);
+        o.setTransform(1, 0, 0, 1, 0, 0);
+        o.globalCompositeOperation = 'source-in';
+        const x = lerp(250, 1750, ease(sh));
+        const lg = o.createLinearGradient(x - 150, 0, x + 150, 0);
+        lg.addColorStop(0, 'rgba(120,220,255,0)'); lg.addColorStop(.5, 'rgba(200,245,255,1)'); lg.addColorStop(1, 'rgba(120,220,255,0)');
+        o.fillStyle = lg;
+        o.fillRect(0, 0, W, H);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = .75 * Math.sin(Math.PI * sh);
+        ctx.drawImage(shineCv, 0, 0);
+        ctx.restore();
+      }
+    }
+
+    // landing flash + bloom
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const f = Math.max(0, t - LOCK) === 0 ? 0 : .45 * Math.exp(-(t - LOCK) / .14);
+    if (t > LOCK && f > .003) {
+      ctx.globalAlpha = f; ctx.fillStyle = '#e8f7ff'; ctx.fillRect(0, 0, W, H);
+    }
+    const fo = prog(t, 8.4, DUR);
+    if (fo > 0) { ctx.globalAlpha = fo; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
+  }
+
+  function boot() {
+    build();
+    window.render = render;
+    window.ready = true;
+    window.DOTS = D.length;
+    render(0);
+    const btn = document.getElementById('play');
+    if (window.__capture) { btn.hidden = true; return; }
+    const snd = document.getElementById('snd');
+    btn.addEventListener('click', () => {
+      btn.hidden = true;
+      snd.currentTime = 0;
+      snd.play().catch(() => {});
+      const t0 = performance.now();
+      const loop = now => {
+        const t = snd.paused || snd.ended ? (now - t0) / 1000 : snd.currentTime;
+        render(Math.min(t, DUR));
+        if (t < DUR) requestAnimationFrame(loop); else btn.hidden = false;
+      };
+      requestAnimationFrame(loop);
+    });
+  }
+
+  logo = new Image();
+  logo.onload = boot;
+  logo.src = URL.createObjectURL(new Blob([LOGO_SVG], { type: 'image/svg+xml' }));
+  </script>
+</body>
+</html>

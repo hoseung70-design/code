@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INHA Shape Morph</title>
+  <style>
+    :root { --bg: #06080f; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: var(--bg); overflow: hidden; }
+    body { display: grid; place-items: center; }
+    canvas {
+      display: block;
+      width: min(100vw, calc(100vh * 16 / 9));
+      aspect-ratio: 16 / 9;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080" aria-label="도형이 모여 인하공업전문대학 로고가 되고, 다시 원·사각형·삼각형으로 바뀌는 모션"></canvas>
+  <script src="logo-data.js"></script>
+  <script>
+  /*
+   * Shape morph, 12 s loop, 1920×1080.
+   *   A  scatter  : loose confetti of circles, squares, triangles
+   *   B  logo     : the same shapes pack into the INHA lockup → crisp logo
+   *   C  geometry : the logo breaks into a circle / square / triangle trio
+   *   → back to A, seamless.
+   * render(t) is a pure function of time, so frames can be exported exactly.
+   */
+  const W = 1920, H = 1080, T = 12;
+  const BG = '#06080f';
+  const CYAN = '#00adee', NAVY = '#1e398c', GREEN = '#009a56', WHITE = '#ffffff';
+  const PALETTE = [CYAN, NAVY, GREEN, WHITE, CYAN, WHITE];
+  const GRID = 7;                       // particle pitch on the logo
+  const LOGO_W = 1500;                  // lockup width on screen
+  const LOGO_H = LOGO_W * 224 / 886;
+  const LOGO_X = (W - LOGO_W) / 2, LOGO_Y = (H - LOGO_H) / 2;
+
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+
+  // deterministic random
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const ease = k => k < .5 ? 8 * k ** 4 : 1 - (-2 * k + 2) ** 4 / 2;   // in-out quart
+  const smooth = (a, b, t) => { const k = clamp((t - a) / (b - a)); return k * k * (3 - 2 * k); };
+
+  // ---------- target C: circle · square · triangle ----------
+  const SHAPES = [
+    { kind: 'circle',   cx: 560,  cy: 540, r: 215, color: CYAN,  spin: 0 },
+    { kind: 'square',   cx: 960,  cy: 540, r: 195, color: NAVY,  spin: Math.PI / 2 },
+    { kind: 'triangle', cx: 1365, cy: 575, r: 255, color: GREEN, spin: Math.PI * 2 / 3 },
+  ];
+  function insideShape(s, x, y) {
+    const dx = x - s.cx, dy = y - s.cy;
+    if (s.kind === 'circle') return dx * dx + dy * dy <= s.r * s.r;
+    if (s.kind === 'square') return Math.abs(dx) <= s.r && Math.abs(dy) <= s.r;
+    // equilateral, point up, circumradius r
+    const h = s.r * 1.5, top = -s.r, base = s.r / 2;
+    if (dy < top || dy > base) return false;
+    const half = (dy - top) / h * (s.r * Math.sqrt(3) / 2) ;
+    return Math.abs(dx) <= half;
+  }
+
+  let P = [], logoImg, C_SIZE = GRID;
+
+  function build() {
+    // sample the lockup into a grid of coloured points
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const o = off.getContext('2d');
+    o.drawImage(logoImg, LOGO_X, LOGO_Y, LOGO_W, LOGO_H);
+    const data = o.getImageData(0, 0, W, H).data;
+    const pts = [];
+    for (let y = Math.floor(LOGO_Y); y < LOGO_Y + LOGO_H; y += GRID)
+      for (let x = Math.floor(LOGO_X); x < LOGO_X + LOGO_W; x += GRID) {
+        const i = (y * W + x) * 4;
+        if (data[i + 3] > 140) pts.push({ x, y, c: [data[i], data[i + 1], data[i + 2]] });
+      }
+
+    // C targets: pack the three shapes on an even grid, same count as the logo
+    const gridIn = d => {
+      const out = [];
+      SHAPES.forEach((sh, si) => {
+        for (let y = sh.cy - sh.r; y <= sh.cy + sh.r; y += d)
+          for (let x = sh.cx - sh.r; x <= sh.cx + sh.r; x += d)
+            if (insideShape(sh, x, y)) out.push({ x, y, s: si });
+      });
+      return out;
+    };
+    let lo = 2, hi = 40;                       // largest pitch that still fits every particle
+    for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; gridIn(m).length >= pts.length ? lo = m : hi = m; }
+    C_SIZE = lo * 1.02;
+    const cpts = gridIn(lo);
+    while (cpts.length > pts.length) cpts.splice(Math.floor(rnd() * cpts.length), 1);
+    cpts.sort((a, b) => a.x - b.x);               // left→right ordering…
+    const order = pts.map((p, i) => i).sort((a, b) => pts[a].x - pts[b].x);  // …matches logo left→right
+
+    P = order.map((pi, k) => {
+      const b = pts[pi], c = cpts[k];
+      const ang = rnd() * Math.PI * 2, rad = 380 + rnd() * 900;
+      return {
+        type: Math.floor(rnd() * 3),                     // 0 circle, 1 square, 2 triangle
+        // A: scatter around the frame
+        ax: W / 2 + Math.cos(ang) * rad * 1.15, ay: H / 2 + Math.sin(ang) * rad * .62,
+        as: 4 + rnd() * 16, ac: hex(PALETTE[Math.floor(rnd() * PALETTE.length)]),
+        arot: rnd() * 6.28, aspin: (rnd() - .5) * 2, ph: rnd() * 6.28, amp: 20 + rnd() * 50,
+        // B: logo
+        bx: b.x + GRID / 2, by: b.y + GRID / 2, bc: b.c,
+        // C: geometry
+        cx: c.x, cy: c.y, cs: c.s, cc: hex(SHAPES[c.s].color),
+        // per-particle timing + arc
+        dAB: .75 * ((b.x - LOGO_X) / LOGO_W) + .35 * rnd(),
+        dBC: .5 * Math.hypot(b.x - W / 2, b.y - H / 2) / 900 + .35 * rnd(),
+        dCA: .45 * rnd(),
+        arc: (rnd() - .5) * 420,
+      };
+    });
+  }
+
+  // ---------- per-state positions ----------
+  function posA(p, t) {
+    const w = Math.PI * 2 * t / T;                    // periodic drift → seamless loop
+    return [p.ax + Math.sin(w + p.ph) * p.amp, p.ay + Math.cos(w * 2 + p.ph) * p.amp * .6,
+            p.as, p.arot + Math.sin(w + p.ph) * 3 * p.aspin];
+  }
+  function posC(p, t) {
+    const s = SHAPES[p.cs];
+    const a = s.spin * ease(smooth(8.9, 10.6, t));   // each shape turns one symmetry step
+    const dx = p.cx - s.cx, dy = p.cy - s.cy;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    return [s.cx + dx * ca - dy * sa, s.cy + dx * sa + dy * ca, C_SIZE, a];
+  }
+
+  function mix(a, b, k, arc) {
+    const x = lerp(a[0], b[0], k), y = lerp(a[1], b[1], k);
+    const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+    const bend = Math.sin(Math.PI * k) * arc;
+    return [x - dy / len * bend, y + dx / len * bend, lerp(a[2], b[2], k), lerp(a[3], b[3], k)];
+  }
+  const mixC = (a, b, k) => a.map((v, i) => lerp(v, b[i], k));
+
+  // ---------- render ----------
+  function shape(type, x, y, s, rot, c, alpha) {
+    ctx.setTransform(Math.cos(rot), Math.sin(rot), -Math.sin(rot), Math.cos(rot), x, y);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+    const h = s / 2;
+    if (type === 0) { ctx.beginPath(); ctx.arc(0, 0, h, 0, 6.2832); ctx.fill(); }
+    else if (type === 1) ctx.fillRect(-h, -h, s, s);
+    else { ctx.beginPath(); ctx.moveTo(0, -h * 1.15); ctx.lineTo(h, h * .85); ctx.lineTo(-h, h * .85); ctx.fill(); }
+  }
+
+  function render(time) {
+    const t = ((time % T) + T) % T;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+
+    // crisp logo takes over once the shapes have landed
+    const logoA = smooth(3.0, 3.6, t) * (1 - smooth(5.9, 6.3, t));
+    const partA = 1 - logoA;
+    const breathe = 1 + .015 * Math.sin(Math.PI * smooth(3.4, 6.2, t));
+
+    if (partA > .001) {
+      for (const p of P) {
+        let s, col;
+        if (t < 3.6) {                                      // A → B
+          const k = ease(clamp((t - .4 - p.dAB) / 1.6));
+          s = mix(posA(p, t), [p.bx, p.by, GRID * .95, 0], k, p.arc);
+          col = mixC(p.ac, p.bc, k);
+        } else if (t < 6.3) {                               // hold B (under the crisp logo)
+          s = [p.bx, p.by, GRID * .95, 0]; col = p.bc;
+        } else if (t < 10.7) {                              // B → C, then C holds and turns
+          const k = ease(clamp((t - 6.3 - p.dBC) / 1.7));
+          s = mix([p.bx, p.by, GRID * .95, 0], posC(p, t), k, -p.arc * .6);
+          col = mixC(p.bc, p.cc, k);
+        } else {                                            // C → A, lands on t = 0
+          const k = ease(clamp((t - 10.7 - p.dCA) / .85));
+          s = mix(posC(p, t), posA(p, t), k, p.arc * .8);
+          col = mixC(p.cc, p.ac, k);
+        }
+        // scale around the frame centre with the logo breathing
+        const x = W / 2 + (s[0] - W / 2) * breathe, y = H / 2 + (s[1] - H / 2) * breathe;
+        shape(p.type, x, y, s[2] * breathe, s[3], col, partA);
+      }
+    }
+
+    if (logoA > .001) {
+      ctx.setTransform(breathe, 0, 0, breathe, W / 2 * (1 - breathe), H / 2 * (1 - breathe));
+      ctx.globalAlpha = logoA;
+      ctx.drawImage(logoImg, LOGO_X, LOGO_Y, LOGO_W, LOGO_H);
+    }
+  }
+
+  // ---------- boot ----------
+  logoImg = new Image();
+  logoImg.onload = () => {
+    build();
+    window.render = render;
+    window.ready = true;
+    if (!window.__capture) {
+      const t0 = performance.now();
+      const loop = now => { render((now - t0) / 1000); requestAnimationFrame(loop); };
+      requestAnimationFrame(loop);
+    }
+  };
+  logoImg.src = URL.createObjectURL(new Blob([LOGO_SVG], { type: 'image/svg+xml' }));
+  </script>
+</body>
+</html>

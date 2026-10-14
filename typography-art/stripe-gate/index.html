@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INHA Stripe Gate</title>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #000; overflow: hidden; }
+    body { display: grid; place-items: center; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+    #play { position: fixed; inset: 0; display: grid; place-items: center; background: transparent;
+            border: 0; color: #fff; cursor: pointer; font-size: 18px; letter-spacing: .3em; }
+    #play span { padding: 14px 28px; border: 1px solid rgba(255,255,255,.5); border-radius: 40px; }
+    #play[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080" aria-label="색 줄무늬 벽이 떨어지고 갈라지며 인하공업전문대학 엠블럼이 나타나고, 빛의 터널을 지나 로고가 완성되는 인트로"></canvas>
+  <button id="play" type="button"><span>▶ PLAY (SOUND ON)</span></button>
+  <audio id="snd" src="intro.wav" preload="auto"></audio>
+  <script>
+  /*
+   * "Stripe Gate" — 6.5 s, 1920×1080, synced to intro.wav (same hit map as synth.py).
+   *   0.30–0.50  a wall of brand-colour stripes falls and slams down on hit 1
+   *   0.95       hit 2: the wall splits like a gate, the emblem punches through
+   *   1.00–4.50  swell: rings and speed lines rush toward the camera,
+   *              giant I·N·H·A outlines land on four beats behind the emblem
+   *   4.50       peak: white bloom, emblem lifts, wordmark rises beneath
+   *   5.90–6.50  fade to black
+   */
+  const W = 1920, H = 1080, DUR = 6.5;
+  const H1 = .50, H2 = .95, SW0 = 1.0, PEAK = 4.5;
+  const CYAN = '#00adee', NAVY = '#1e398c', GREEN = '#009a56', WHITE = '#ffffff';
+  const CX = W / 2, CY = H / 2;
+
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const inQuad = k => k * k;
+  const outExpo = k => k >= 1 ? 1 : 1 - 2 ** (-10 * k);
+  const outBack = k => 1 + 2.4 * (k - 1) ** 3 + 1.4 * (k - 1) ** 2;
+  const inOut = k => k < .5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+
+  let seed = 5;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  // stripe wall
+  const NB = 24, BW = W / NB;
+  const BAR_COLORS = [CYAN, NAVY, CYAN, WHITE, GREEN, NAVY, CYAN, NAVY];
+  const BARS = Array.from({ length: NB }, (_, i) => ({
+    c: BAR_COLORS[(i * 5 + Math.floor(rnd() * 3)) % BAR_COLORS.length],
+    land: H1 + Math.abs(i - (NB - 1) / 2) / ((NB - 1) / 2) * .05 - .05,   // centre lands first, all by H1
+    split: .6 + rnd() * .5,
+  }));
+
+  // tunnel
+  const RING_COLORS = [CYAN, WHITE, NAVY, GREEN, CYAN];
+  const RINGS = Array.from({ length: 16 }, (_, i) => ({ ph: i / 16, c: RING_COLORS[i % RING_COLORS.length] }));
+  const LINES = Array.from({ length: 140 }, () => ({
+    a: rnd() * Math.PI * 2, ph: rnd(), w: .8 + rnd() * 2.2,
+    c: [CYAN, CYAN, WHITE, GREEN, NAVY][Math.floor(rnd() * 5)],
+  }));
+
+  // giant letters on four beats
+  const LETTERS = [
+    { ch: 'I', x: 330,  at: 2.0 }, { ch: 'N', x: 760,  at: 2.6 },
+    { ch: 'H', x: 1160, at: 3.2 }, { ch: 'A', x: 1590, at: 3.8 },
+  ];
+
+  // final stacked lockup
+  const EMB_HERO = 540, EMB_END = 380, EMB_END_Y = 395;
+  const WM_W = 900, WM_H = WM_W * 145 / 650, WM_Y = 640;
+
+  const img = {};
+
+  function shake(t) {
+    const hit = (h, a) => { const x = t - h; return x < 0 || x > .4 ? 0 : a * Math.exp(-x * 13); };
+    const a = hit(H1, 16) + hit(H2, 20) + hit(PEAK, 10);
+    return [Math.sin(t * 97) * a, Math.cos(t * 83) * a];
+  }
+
+  function render(t) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    const [sx, sy] = shake(t);
+    const swell = prog(t, SW0, PEAK) ** 1.5 * (t > PEAK ? Math.exp(-(t - PEAK) / .5) : 1);
+    const lift = outExpo(prog(t, PEAK, PEAK + .7));
+    const embY = lerp(CY, EMB_END_Y, lift);
+
+    // ---------- anticipation: a hairline of light before the wall drops ----------
+    const pre = prog(t, 0, .32) * (1 - prog(t, .32, .4));
+    if (pre > 0) {
+      ctx.fillStyle = CYAN;
+      ctx.globalAlpha = pre;
+      const w = W * inOut(prog(t, 0, .32));
+      ctx.fillRect(CX - w / 2, CY - 1, w, 2);
+    }
+
+    // ---------- tunnel (behind everything) ----------
+    if (swell > .002) {
+      ctx.setTransform(1, 0, 0, 1, CX + sx, embY + sy);
+      ctx.globalCompositeOperation = 'lighter';
+      const d = t - SW0, travel = .32 * d + .11 * d * d;            // accelerating
+      for (const r of RINGS) {
+        const u = (r.ph + travel) % 1;
+        const rad = 230 * 11 ** u;
+        ctx.globalAlpha = swell * Math.sin(Math.PI * u) * .7;
+        ctx.strokeStyle = r.c;
+        ctx.lineWidth = 2 + 26 * u * u;
+        ctx.beginPath();
+        ctx.arc(0, 0, rad, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      for (const l of LINES) {
+        const u = (l.ph + travel * 1.6) % 1;
+        const r0 = 260 * 9 ** u, r1 = r0 * (1.15 + .9 * swell);
+        ctx.globalAlpha = swell * Math.sin(Math.PI * u) * .8;
+        ctx.strokeStyle = l.c;
+        ctx.lineWidth = l.w * (1 + 2 * u);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(l.a) * r0, Math.sin(l.a) * r0);
+        ctx.lineTo(Math.cos(l.a) * r1, Math.sin(l.a) * r1);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // ---------- giant I N H A outlines on the beats ----------
+    const letterOut = 1 - prog(t, PEAK, PEAK + .1);
+    if (t > LETTERS[0].at && letterOut > 0) {
+      ctx.setTransform(1, 0, 0, 1, sx, sy);
+      ctx.font = '640px Anton, Impact, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const L of LETTERS) {
+        const k = prog(t, L.at, L.at + .28);
+        if (k <= 0) continue;
+        const s = lerp(1.5, 1, outExpo(k));
+        ctx.save();
+        ctx.translate(L.x, CY + 20);
+        ctx.scale(s, s);
+        ctx.globalAlpha = .9 * outExpo(k) * letterOut;
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(255,255,255,.5)';
+        ctx.strokeText(L.ch, 0, 0);
+        // the beat itself: a quick cyan fill that drains away
+        const pop = Math.exp(-(t - L.at) / .12);
+        if (pop > .02) { ctx.globalAlpha = pop * .7 * letterOut; ctx.fillStyle = CYAN; ctx.fillText(L.ch, 0, 0); }
+        ctx.restore();
+      }
+    }
+
+    // ---------- emblem ----------
+    const kE = prog(t, H2, H2 + .22);
+    if (kE > 0) {
+      const dolly = 1 + .06 * prog(t, SW0, PEAK);
+      const size = lerp(EMB_HERO * dolly, EMB_END, lift) * lerp(1.35, 1, outBack(kE));
+      ctx.setTransform(1, 0, 0, 1, CX + sx, embY + sy);
+      // dark backing disc so the tunnel never shows through
+      ctx.globalAlpha = clamp(kE * 3);
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(0, 0, size * .5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.drawImage(img.emblem, -size / 2, -size / 2, size, size);
+    }
+
+    // ---------- stripe wall: falls, slams, splits like a gate ----------
+    const gate = outExpo(prog(t, H2, H2 + .75));
+    if (t > .28 && gate < 1) {
+      ctx.setTransform(1, 0, 0, 1, sx, sy);
+      ctx.save();
+      if (gate > 0) {                         // circular breach grows from the centre
+        ctx.beginPath();
+        ctx.rect(-50, -50, W + 100, H + 100);
+        ctx.arc(CX, CY, 40 + gate * 900, 0, Math.PI * 2, true);
+        ctx.clip('evenodd');
+      }
+      ctx.globalAlpha = 1;
+      for (let i = 0; i < NB; i++) {
+        const b = BARS[i];
+        const k = prog(t, b.land - .2, b.land);
+        if (k <= 0) continue;
+        const y = -H * (1 - inQuad(k));                          // accelerating fall
+        const side = i < NB / 2 ? -1 : 1;
+        const x = i * BW + side * gate * (W / 2 + 200) * b.split;
+        // squash on impact
+        const sq = 1 - .06 * Math.exp(-Math.max(0, t - b.land) / .05) * (k >= 1);
+        ctx.fillStyle = b.c;
+        ctx.fillRect(x, y + H * (1 - sq), BW + 1, H * sq);
+      }
+      ctx.restore();
+    }
+
+    // ---------- wordmark rises under the emblem ----------
+    const kW = prog(t, PEAK + .12, PEAK + .9);
+    if (kW > 0) {
+      const e = outExpo(kW);
+      ctx.setTransform(1, 0, 0, 1, sx, sy);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, WM_Y - 10, W, WM_H + 30);
+      ctx.clip();
+      ctx.globalAlpha = 1;
+      ctx.drawImage(img.wordmark, CX - WM_W / 2, WM_Y + (1 - e) * (WM_H + 20), WM_W, WM_H);
+      ctx.restore();
+      // thin cyan rule draws out under it
+      const rk = inOut(prog(t, PEAK + .4, PEAK + 1.2));
+      ctx.fillStyle = CYAN;
+      ctx.fillRect(CX - 300 * rk, WM_Y + WM_H + 36, 600 * rk, 4);
+    }
+
+    // ---------- flashes ----------
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const flash = (h, p, d) => { const x = t - h; return x < 0 ? 0 : p * Math.exp(-x / d); };
+    const f = flash(H1, .12, .05) + flash(H2, .45, .07) + flash(PEAK, .6, .16);
+    if (f > .003) { ctx.globalAlpha = Math.min(f, 1); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); }
+
+    const fo = prog(t, 5.9, DUR);
+    if (fo > 0) { ctx.globalAlpha = fo; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
+  }
+
+  function boot() {
+    window.render = render;
+    window.ready = true;
+    render(0);
+    const btn = document.getElementById('play');
+    if (window.__capture) { btn.hidden = true; return; }
+    const snd = document.getElementById('snd');
+    btn.addEventListener('click', () => {
+      btn.hidden = true;
+      snd.currentTime = 0;
+      snd.play().catch(() => {});
+      const t0 = performance.now();
+      const loop = now => {
+        const t = snd.paused || snd.ended ? (now - t0) / 1000 : snd.currentTime;   // follow the audio clock
+        render(Math.min(t, DUR));
+        if (t < DUR) requestAnimationFrame(loop); else btn.hidden = false;
+      };
+      requestAnimationFrame(loop);
+    });
+  }
+
+  const names = ['emblem', 'wordmark'];
+  let loaded = 0;
+  const fontReady = document.fonts.load('640px Anton').catch(() => {});
+  names.forEach(n => {
+    const im = new Image();
+    im.onload = () => { if (++loaded === names.length) fontReady.then(boot); };
+    im.src = n + '.svg';
+    img[n] = im;
+  });
+  </script>
+</body>
+</html>
